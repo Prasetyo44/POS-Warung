@@ -1,34 +1,57 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './ui.jsx';
+import { getSettings } from '../lib/db.js';
 
-const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'codabar', 'qr_code'];
+// Urutan = prioritas. Barcode produk (EAN/UPC) didahulukan bila satu kemasan punya beberapa kode.
+const LINEAR = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'codabar'];
 
-async function makeNativeDetector() {
+async function makeNativeDetector(allowQR) {
   if (!('BarcodeDetector' in window)) return null;
   try {
     const supported = await window.BarcodeDetector.getSupportedFormats();
-    const formats = FORMATS.filter((f) => supported.includes(f));
+    const wanted = allowQR ? [...LINEAR, 'qr_code'] : LINEAR;
+    const formats = wanted.filter((f) => supported.includes(f));
     if (!formats.length) return null;
     const det = new window.BarcodeDetector({ formats });
     return async (video) => {
       const res = await det.detect(video);
-      return res[0]?.rawValue || null;
+      if (!res.length) return null;
+      res.sort((a, b) => wanted.indexOf(a.format) - wanted.indexOf(b.format));
+      return res[0].rawValue ? { code: res[0].rawValue, format: res[0].format } : null;
     };
   } catch {
     return null;
   }
 }
 
-async function makeZxingDetector(canvas) {
+async function makeZxingDetector(canvas, allowQR) {
   const Z = await import('@zxing/library');
-  const hints = new Map();
-  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
+  const makeReader = (formats) => {
+    const hints = new Map();
+    hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(Z.DecodeHintType.TRY_HARDER, true);
+    const r = new Z.MultiFormatReader();
+    r.setHints(hints);
+    return r;
+  };
+  // Dua pembaca terpisah: barcode garis selalu dicoba dulu, QR hanya jika garis tidak terbaca
+  // (MultiFormatReader dengan TRY_HARDER justru mencoba QR lebih dulu).
+  const linear = makeReader([
     Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E,
-    Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF, Z.BarcodeFormat.QR_CODE,
+    Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF,
   ]);
-  hints.set(Z.DecodeHintType.TRY_HARDER, true);
-  const reader = new Z.MultiFormatReader();
-  reader.setHints(hints);
+  const qr = allowQR ? makeReader([Z.BarcodeFormat.QR_CODE]) : null;
+  // bitmap dibuat baru untuk tiap pembaca karena pembaca 1D memutar (mengubah) sumber gambar
+  const tryRead = (reader, format) => {
+    try {
+      const bitmap = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(canvas)));
+      return { code: reader.decodeWithState(bitmap).getText(), format };
+    } catch {
+      return null;
+    } finally {
+      reader.reset();
+    }
+  };
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   return async (video) => {
     const vw = video.videoWidth;
@@ -41,15 +64,7 @@ async function makeZxingDetector(canvas) {
     canvas.width = Math.round(cw * scale);
     canvas.height = Math.round(ch * scale);
     ctx.drawImage(video, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, canvas.width, canvas.height);
-    try {
-      const src = new Z.HTMLCanvasElementLuminanceSource(canvas);
-      const res = reader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(src)));
-      return res.getText();
-    } catch {
-      return null;
-    } finally {
-      reader.reset();
-    }
+    return tryRead(linear, 'linear') || (qr && tryRead(qr, 'qr_code'));
   };
 }
 
@@ -57,7 +72,7 @@ async function makeZxingDetector(canvas) {
  * Pemindai barcode pakai kamera HP.
  * continuous: tetap terbuka setelah berhasil scan (mode kasir).
  */
-export function Scanner({ onDetected, onClose, continuous = false, title = 'Scan Barcode' }) {
+export function Scanner({ onDetected, onClose, continuous = false, title = 'Scan Barcode', allowQR }) {
   const videoRef = useRef();
   const canvasRef = useRef();
   const [error, setError] = useState('');
@@ -95,20 +110,22 @@ export function Scanner({ onDetected, onClose, continuous = false, title = 'Scan
           if (caps.focusMode?.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
         } catch {}
 
-        const detect = (await makeNativeDetector()) || (await makeZxingDetector(canvasRef.current));
+        const qr = allowQR ?? (await getSettings()).scanQR;
+        const detect = (await makeNativeDetector(qr)) || (await makeZxingDetector(canvasRef.current, qr));
         const loop = async () => {
           if (stopped) return;
-          let code = null;
+          let hit = null;
           try {
-            if (video.readyState >= 2) code = await detect(video);
+            if (video.readyState >= 2) hit = await detect(video);
           } catch {}
-          if (code) {
+          if (hit) {
+            const code = hit.code;
             const now = Date.now();
             if (code !== lastCode || now - lastTime > 1800) {
               lastCode = code;
               lastTime = now;
               setLast(code);
-              cbRef.current(code);
+              cbRef.current(code, hit.format);
               if (!continuous) return;
             }
           }

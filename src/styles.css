@@ -327,3 +327,6 @@ main { padding-bottom: calc(var(--tabbar) + var(--safe-b) + 8px); }
   body { background: #e2e8f0; }
   .app { background: var(--bg); box-shadow: 0 0 40px rgba(0, 0, 0, .08); }
 }
+
+.code-chip { display: inline-flex; align-items: center; gap: 6px; padding-right: 6px; font-family: ui-monospace, monospace; font-size: 13px; }
+.code-chip button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #f1f5f9; color: var(--muted); }

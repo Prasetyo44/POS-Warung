@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { Header, Icon, Empty, useLive } from '../components/ui.jsx';
 import { ProductForm } from '../components/ProductForm.jsx';
 import { Scanner } from '../components/Scanner.jsx';
-import { db } from '../lib/db.js';
+import { db, findByBarcode, matchesCode } from '../lib/db.js';
 import { rp, num, beep, toast } from '../lib/utils.js';
 
 const PAGE = 60;
@@ -26,7 +26,7 @@ export function Produk() {
     (p) =>
       (!cat || p.category === cat) &&
       (filter === 'all' || (filter === 'low' ? p.stock <= (p.minStock || 0) && p.stock > 0 : p.stock <= 0)) &&
-      (!s || p.barcode === s || words.every((w) => p.name.toLowerCase().includes(w)))
+      (!s || matchesCode(p, s) || words.every((w) => p.name.toLowerCase().includes(w)))
   );
   const sorters = {
     name: (a, b) => a.name.localeCompare(b.name),
@@ -42,7 +42,7 @@ export function Produk() {
   const onScan = async (code) => {
     beep();
     setScan(false);
-    const p = await db.products.where('barcode').equals(code).first();
+    const p = await findByBarcode(code);
     if (p) setEdit(p);
     else {
       toast('Barcode baru, silakan lengkapi data barang');

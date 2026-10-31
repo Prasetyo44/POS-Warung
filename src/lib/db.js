@@ -11,6 +11,15 @@ db.version(1).stores({
   settings: 'key',
 });
 
+// v2: satu barang bisa punya beberapa barcode (misal barcode lama & baru, atau EAN + QR)
+db.version(2)
+  .stores({ products: '++id, &barcode, *codes, name, category, stock, updatedAt' })
+  .upgrade((tx) =>
+    tx.table('products').toCollection().modify((p) => {
+      p.codes = [p.barcode, ...(p.altCodes || [])].filter(Boolean);
+    })
+  );
+
 export const DEFAULT_SETTINGS = {
   storeName: 'Warung Saya',
   storeAddress: '',
@@ -23,6 +32,7 @@ export const DEFAULT_SETTINGS = {
   taxPercent: 0,
   allowNegativeStock: true,
   scanBeep: true,
+  scanQR: false, // QR Code ikut dibaca saat scan (bawaan: hanya barcode garis EAN/UPC/Code128)
   lowStockDefault: 5,
 };
 
@@ -50,9 +60,17 @@ async function nextSaleNo(date) {
   return `${prefix}-${pad(n, 4)}`;
 }
 
+/** Cari barang dari barcode utama maupun barcode tambahan. UPC-A 12 digit = EAN-13 berawalan 0. */
 export function findByBarcode(code) {
-  return db.products.where('barcode').equals(String(code).trim()).first();
+  const c = String(code).trim();
+  const variants = [c];
+  if (/^\d{12}$/.test(c)) variants.push('0' + c);
+  if (/^0\d{12}$/.test(c)) variants.push(c.slice(1));
+  return db.products.where('codes').anyOf(variants).first();
 }
+
+/** s sudah huruf kecil (dari kolom pencarian) */
+export const matchesCode = (p, s) => (p.barcode || '').toLowerCase() === s || (p.altCodes || []).some((c) => c.toLowerCase() === s);
 
 /**
  * Simpan transaksi penjualan, kurangi stok, catat riwayat stok dan arus kas.
@@ -198,6 +216,8 @@ export async function saveProduct(p) {
     updatedAt: Date.now(),
   };
   if (!data.barcode) data.barcode = `NB${Date.now().toString(36).toUpperCase()}`;
+  data.altCodes = [...new Set((p.altCodes || []).map((c) => String(c).trim()).filter((c) => c && c !== data.barcode))];
+  data.codes = [data.barcode, ...data.altCodes];
   if (p.id) {
     await db.products.update(p.id, data);
     return p.id;

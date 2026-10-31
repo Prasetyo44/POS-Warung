@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { Icon, useLive } from './ui.jsx';
 import { Scanner } from './Scanner.jsx';
 import { ProductForm } from './ProductForm.jsx';
-import { db } from '../lib/db.js';
+import { db, findByBarcode, matchesCode } from '../lib/db.js';
 import { rp, num, beep, toast } from '../lib/utils.js';
 
 /** Cari barang lewat nama atau scan barcode, lalu panggil onPick(product). */
@@ -15,7 +15,7 @@ export function ProductPicker({ onPick, placeholder = 'Cari / scan barang' }) {
       const s = q.trim().toLowerCase();
       if (!s) return [];
       const words = s.split(/\s+/);
-      return db.products.filter((p) => p.barcode === s || words.every((w) => p.name.toLowerCase().includes(w))).limit(20).toArray();
+      return db.products.filter((p) => matchesCode(p, s) || words.every((w) => p.name.toLowerCase().includes(w))).limit(20).toArray();
     },
     [q],
     []
@@ -29,7 +29,7 @@ export function ProductPicker({ onPick, placeholder = 'Cari / scan barang' }) {
   const onScan = async (code) => {
     beep();
     setScan(false);
-    const p = await db.products.where('barcode').equals(code).first();
+    const p = await findByBarcode(code);
     if (p) pick(p);
     else {
       toast('Barcode belum terdaftar, lengkapi data barang');

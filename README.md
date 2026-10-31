@@ -15,6 +15,8 @@ Aplikasi kasir (Point of Sale) untuk warung, toko kelontong, dan minimarket keci
 - Diskon per transaksi dan pajak/PPN opsional
 - **Tunda transaksi** untuk melayani pembeli lain dulu
 - Scan barcode yang belum terdaftar langsung bisa ditambahkan sebagai barang baru
+- Kemasan dengan barcode garis + QR Code: barcode garis (EAN/UPC) selalu diutamakan, QR Code bawaannya tidak dibaca (bisa dinyalakan di Pengaturan)
+- Satu barang bisa punya beberapa barcode (barcode tambahan), misalnya QR Code kemasan atau barcode kemasan lama/baru
 - Mendukung scanner USB/Bluetooth model keyboard (ketik barcode + Enter)
 
 **Cetak nota**

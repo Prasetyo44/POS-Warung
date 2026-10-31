@@ -10,12 +10,20 @@ export function ProductForm({ product, initialBarcode = '', onClose, onSaved }) 
   const [p, setP] = useState(() =>
     product
       ? { ...product, barcode: product.barcode?.startsWith('NB') ? '' : product.barcode }
-      : { barcode: initialBarcode, name: '', category: '', unit: 'pcs', buyPrice: 0, sellPrice: 0, stock: 0, minStock: 5 }
+      : { barcode: initialBarcode, altCodes: [], name: '', category: '', unit: 'pcs', buyPrice: 0, sellPrice: 0, stock: 0, minStock: 5 }
   );
-  const [scan, setScan] = useState(false);
+  const [scan, setScan] = useState(false); // false | 'main' | 'alt'
+  const [altInput, setAltInput] = useState('');
   const [busy, setBusy] = useState(false);
   const cats = useLive(async () => [...new Set((await db.products.orderBy('category').uniqueKeys()).filter(Boolean))], [], []);
   const set = (k) => (v) => setP((x) => ({ ...x, [k]: v }));
+  const addAlt = (code) => {
+    const c = String(code || '').trim();
+    if (!c) return;
+    if (c === (p.barcode || '').trim() || (p.altCodes || []).includes(c)) toast('Barcode itu sudah ada di barang ini', 'err');
+    else setP((x) => ({ ...x, altCodes: [...(x.altCodes || []), c] }));
+    setAltInput('');
+  };
   const margin = p.sellPrice - p.buyPrice;
   const pct = p.buyPrice ? Math.round((margin / p.buyPrice) * 100) : 0;
 
@@ -25,11 +33,11 @@ export function ProductForm({ product, initialBarcode = '', onClose, onSaved }) 
     if (!p.sellPrice) return toast('Harga jual wajib diisi', 'err');
     setBusy(true);
     try {
-      if (p.barcode) {
-        const dupe = await db.products.where('barcode').equals(p.barcode.trim()).first();
+      for (const code of [p.barcode, ...(p.altCodes || [])].map((c) => (c || '').trim()).filter(Boolean)) {
+        const dupe = await db.products.where('codes').equals(code).first();
         if (dupe && dupe.id !== p.id) {
           setBusy(false);
-          return toast(`Barcode sudah dipakai "${dupe.name}"`, 'err', 3000);
+          return toast(`Barcode ${code} sudah dipakai "${dupe.name}"`, 'err', 3500);
         }
       }
       const id = await saveProduct(p);
@@ -71,7 +79,41 @@ export function ProductForm({ product, initialBarcode = '', onClose, onSaved }) 
         <Field label="Barcode" hint="Kosongkan jika barang tidak punya barcode (dicari lewat nama).">
           <div class="row gap">
             <input class="input grow" inputMode="numeric" value={p.barcode} onInput={(e) => set('barcode')(e.currentTarget.value)} placeholder="Scan atau ketik" />
-            <button type="button" class="btn secondary" onClick={() => setScan(true)} aria-label="Scan barcode">
+            <button type="button" class="btn secondary" onClick={() => setScan('main')} aria-label="Scan barcode">
+              <Icon name="scan" />
+            </button>
+          </div>
+        </Field>
+        <Field label="Barcode tambahan" hint="Untuk barang dengan lebih dari satu kode: QR Code di kemasan, barcode lama/baru, atau varian kemasan dengan harga sama.">
+          {(p.altCodes || []).length > 0 && (
+            <div class="chips">
+              {p.altCodes.map((c) => (
+                <span class="chip code-chip">
+                  {c.length > 24 ? c.slice(0, 22) + '…' : c}
+                  <button type="button" aria-label={`Hapus ${c}`} onClick={() => set('altCodes')(p.altCodes.filter((x) => x !== c))}>
+                    <Icon name="x" size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div class="row gap">
+            <input
+              class="input grow"
+              value={altInput}
+              onInput={(e) => setAltInput(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addAlt(altInput);
+                }
+              }}
+              placeholder="Ketik lalu tekan +"
+            />
+            <button type="button" class="btn ghost" onClick={() => addAlt(altInput)} aria-label="Tambah barcode">
+              <Icon name="plus" />
+            </button>
+            <button type="button" class="btn secondary" onClick={() => setScan('alt')} aria-label="Scan barcode tambahan">
               <Icon name="scan" />
             </button>
           </div>
@@ -125,10 +167,13 @@ export function ProductForm({ product, initialBarcode = '', onClose, onSaved }) 
       </form>
       {scan && (
         <Scanner
+          allowQR={scan === 'alt' ? true : undefined}
+          title={scan === 'alt' ? 'Scan barcode tambahan' : 'Scan Barcode'}
           onClose={() => setScan(false)}
           onDetected={(code) => {
             beep();
-            set('barcode')(code);
+            if (scan === 'alt') addAlt(code);
+            else set('barcode')(code);
             setScan(false);
           }}
         />

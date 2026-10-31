@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Header, Icon, Sheet, MoneyInput, Empty, Field, Segmented, useLive } from '../components/ui.jsx';
 import { Scanner } from '../components/Scanner.jsx';
 import { ProductForm } from '../components/ProductForm.jsx';
-import { db, checkout } from '../lib/db.js';
+import { db, checkout, findByBarcode, matchesCode } from '../lib/db.js';
 import { rp, num, toast, beep, confirmDialog, fmtTime, shareText } from '../lib/utils.js';
 import { printReceipt, receiptText, effectiveMethod } from '../lib/printer.js';
 
@@ -16,14 +16,7 @@ const load = (k, d) => {
   }
 };
 
-/** UPC-A (12 digit) dan EAN-13 berawalan 0 dianggap sama. */
-async function lookupBarcode(code) {
-  const c = String(code).trim();
-  const variants = [c];
-  if (/^\d{12}$/.test(c)) variants.push('0' + c);
-  if (/^0\d{12}$/.test(c)) variants.push(c.slice(1));
-  return db.products.where('barcode').anyOf(variants).first();
-}
+const lookupBarcode = findByBarcode;
 
 export function Kasir({ settings }) {
   const [cart, setCart] = useState(() => load(CART_KEY, []));
@@ -47,7 +40,7 @@ export function Kasir({ settings }) {
       if (!s) return [];
       const words = s.split(/\s+/);
       return db.products
-        .filter((p) => p.barcode === s || words.every((w) => p.name.toLowerCase().includes(w) || (p.category || '').toLowerCase().includes(w)))
+        .filter((p) => matchesCode(p, s) || words.every((w) => p.name.toLowerCase().includes(w) || (p.category || '').toLowerCase().includes(w)))
         .limit(30)
         .toArray();
     },
@@ -80,11 +73,14 @@ export function Kasir({ settings }) {
     return true;
   };
 
-  const onScan = async (code) => {
+  const onScan = async (code, format) => {
     const p = await lookupBarcode(code);
     if (p) {
       if (settings.scanBeep) beep();
       if (addProduct(p)) toast(`+1 ${p.name}`, 'ok', 1200);
+    } else if (format === 'qr_code') {
+      // QR di kemasan sering berisi link/kode izin edar, bukan kode barang: lanjut scan saja
+      toast('QR Code belum terdaftar. Arahkan ke barcode garis, atau daftarkan QR ini sebagai barcode tambahan.', 'err', 2500);
     } else {
       if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
       setScanning(false);

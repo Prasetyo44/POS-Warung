@@ -13,21 +13,40 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => {
-      if (hit) return hit;
-      return fetch(req)
+
+  // Halaman: ambil versi terbaru dari internet jika ada, kalau offline pakai salinan tersimpan.
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      Promise.race([fetch(req), timeout(3500)])
         .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('index.html', copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match('index.html'))
+    );
+    return;
+  }
+
+  // File aplikasi (nama ber-hash): pakai cache dulu supaya cepat dan jalan offline.
+  e.respondWith(
+    caches.match(req, { ignoreSearch: true }).then(
+      (hit) =>
+        hit ||
+        fetch(req).then((res) => {
           if (res.ok) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(req, copy));
           }
           return res;
         })
-        .catch(() => (req.mode === 'navigate' ? caches.match('index.html') : undefined));
-    })
+    )
   );
 });

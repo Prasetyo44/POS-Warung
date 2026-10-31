@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { Header, Icon, Field, Segmented, Sheet, Empty, useLive } from '../components/ui.jsx';
-import { db, saveSettings, exportAll, importAll, loadDemo, wipeAll, saveProduct } from '../lib/db.js';
+import { db, saveSettings, exportAll, importAll, loadDemo, wipeAll, saveProduct, findByBarcode } from '../lib/db.js';
 import { rp, toast, confirmDialog, download, toCSV, isoDate, parseNum } from '../lib/utils.js';
 import { pairBluetooth, printTest, bluetoothSupported, connectedPrinterName, effectiveMethod } from '../lib/printer.js';
 import { isNative, PosPrinter } from '../lib/native.js';
@@ -137,8 +137,9 @@ export function Pengaturan({ settings, back }) {
 
   const exportProducts = async () => {
     const list = await db.products.orderBy('name').toArray();
-    const rows = [['Barcode', 'Nama', 'Kategori', 'Satuan', 'Harga Beli', 'Harga Jual', 'Stok', 'Stok Minimum']];
-    for (const p of list) rows.push([p.barcode?.startsWith('NB') ? '' : p.barcode, p.name, p.category, p.unit, p.buyPrice, p.sellPrice, p.stock, p.minStock]);
+    const rows = [['Barcode', 'Nama', 'Kategori', 'Satuan', 'Harga Beli', 'Harga Jual', 'Stok', 'Stok Minimum', 'Barcode Tambahan']];
+    for (const p of list)
+      rows.push([p.barcode?.startsWith('NB') ? '' : p.barcode, p.name, p.category, p.unit, p.buyPrice, p.sellPrice, p.stock, p.minStock, (p.altCodes || []).join(' | ')]);
     download(`daftar-barang-${isoDate(Date.now())}.csv`, toCSV(rows), 'text/csv');
   };
 
@@ -172,14 +173,15 @@ export function Pengaturan({ settings, back }) {
       let added = 0;
       let updated = 0;
       for (const l of lines.slice(1)) {
-        const [barcode, name, category, unit, buy, sell, stock, min] = parse(l);
+        const [barcode, name, category, unit, buy, sell, stock, min, alt] = parse(l);
         if (!name) continue;
-        const existing = barcode ? await db.products.where('barcode').equals(barcode).first() : null;
+        const altCodes = (alt || '').split('|').map((x) => x.trim()).filter(Boolean);
+        const existing = barcode ? await findByBarcode(barcode) : null;
         if (existing) {
-          await saveProduct({ ...existing, name, category, unit: unit || existing.unit, buyPrice: parseNum(buy), sellPrice: parseNum(sell), minStock: parseNum(min) || existing.minStock });
+          await saveProduct({ ...existing, name, category, unit: unit || existing.unit, buyPrice: parseNum(buy), sellPrice: parseNum(sell), minStock: parseNum(min) || existing.minStock, altCodes: altCodes.length ? altCodes : existing.altCodes });
           updated++;
         } else {
-          await saveProduct({ barcode, name, category, unit: unit || 'pcs', buyPrice: parseNum(buy), sellPrice: parseNum(sell), stock: parseNum(stock), minStock: parseNum(min) || s.lowStockDefault });
+          await saveProduct({ barcode, name, category, unit: unit || 'pcs', buyPrice: parseNum(buy), sellPrice: parseNum(sell), stock: parseNum(stock), minStock: parseNum(min) || s.lowStockDefault, altCodes });
           added++;
         }
       }
@@ -293,6 +295,10 @@ export function Pengaturan({ settings, back }) {
               Bunyi "bip" saat scan berhasil
             </label>
             <label class="check">
+              <input type="checkbox" checked={s.scanQR} onChange={(e) => set('scanQR')(e.currentTarget.checked)} />
+              Baca QR Code juga (matikan jika kemasan punya barcode garis + QR)
+            </label>
+            <label class="check">
               <input type="checkbox" checked={s.allowNegativeStock} onChange={(e) => set('allowNegativeStock')(e.currentTarget.checked)} />
               Boleh jual walau stok di aplikasi habis
             </label>
@@ -329,7 +335,7 @@ export function Pengaturan({ settings, back }) {
             </button>
           </div>
           <div class="muted small" style="margin-top:8px">
-            Format impor CSV (Excel): Barcode; Nama; Kategori; Satuan; Harga Beli; Harga Jual; Stok; Stok Minimum. Ekspor dulu untuk contoh formatnya.
+            Format impor CSV (Excel): Barcode; Nama; Kategori; Satuan; Harga Beli; Harga Jual; Stok; Stok Minimum; Barcode Tambahan (pisahkan dengan |). Ekspor dulu untuk contoh formatnya.
           </div>
           <div class="grid2" style="margin-top:10px">
             <button
