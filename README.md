@@ -2,7 +2,8 @@
 
 Aplikasi kasir (Point of Sale) untuk warung, toko kelontong, dan minimarket kecil. Berjalan **100% offline** di HP Android, scan barcode kemasan langsung **pakai kamera HP** (tanpa alat scanner), dan bisa **cetak nota** ke printer thermal Bluetooth 58mm / 80mm.
 
-**Buka & instal:** https://prasetyo44.github.io/POS-Warung/
+**Unduh APK Android:** https://github.com/Prasetyo44/POS-Warung/releases/latest
+**Versi web (tanpa instal APK):** https://prasetyo44.github.io/POS-Warung/
 
 ## Fitur
 
@@ -43,7 +44,24 @@ Aplikasi kasir (Point of Sale) untuk warung, toko kelontong, dan minimarket keci
 - Semua data tersimpan di HP (IndexedDB), tidak butuh internet / server
 - Backup & pulihkan data ke file (untuk ganti HP)
 
-## Cara memasang di HP Android
+## Cara memasang APK di HP Android
+
+1. Buka https://github.com/Prasetyo44/POS-Warung/releases/latest di HP
+2. Di bagian **Assets**, ketuk file `KasirWarung-v1.0.x.apk` untuk mengunduh
+3. Buka file yang terunduh. Jika muncul peringatan, izinkan **Instal aplikasi tidak dikenal** untuk Chrome / File Manager
+4. Buka **Kasir Warung**, izinkan **Kamera** saat pertama scan dan **Perangkat sekitar** (Bluetooth) saat memilih printer
+
+Setiap perubahan kode di branch `main` otomatis membuat APK baru di halaman Releases.
+
+### Kunci tanda tangan APK (agar update bisa menimpa versi lama)
+
+Tanpa pengaturan ini, APK ditandatangani dengan kunci sementara, sehingga untuk memasang versi baru aplikasi lama harus dihapus dulu (lakukan **Backup** data sebelumnya). Untuk kunci permanen, buat keystore lalu isi di *Settings → Secrets and variables → Actions*:
+
+- `ANDROID_KEYSTORE_BASE64`: isi file `.jks` dalam format base64
+- `ANDROID_KEYSTORE_PASSWORD`: password keystore
+- `ANDROID_KEY_ALIAS`: alias kunci
+
+## Cara memasang versi web di HP Android
 
 1. Buka https://prasetyo44.github.io/POS-Warung/ di **Google Chrome**
 2. Ketuk menu **⋮** → **Instal aplikasi** (atau **Tambahkan ke layar utama**)
@@ -52,6 +70,7 @@ Aplikasi kasir (Point of Sale) untuk warung, toko kelontong, dan minimarket keci
 
 ## Cara menyambungkan printer thermal
 
+- **APK (disarankan):** pasangkan printer di Pengaturan HP → Bluetooth (PIN biasanya 0000 atau 1234). Lalu di Kasir Warung buka Menu → Pengaturan & Printer → **Pilih Printer** → **Tes Cetak**.
 - **Bluetooth langsung:** Menu → Pengaturan & Printer → pilih "Bluetooth langsung" → nyalakan printer → **Cari Printer** → pilih nama printer → **Tes Cetak**.
 - **RawBT (jika printer tidak muncul):** pasang aplikasi *RawBT* dari Play Store, pasangkan printer di aplikasi itu, lalu di Kasir Warung pilih "Lewat aplikasi RawBT".
 
@@ -63,4 +82,4 @@ npm run dev      # server pengembangan
 npm run build    # hasil build di folder dist/
 ```
 
-Dibangun dengan Preact, Dexie (IndexedDB), dan ZXing. Setiap push ke `main` otomatis di-build dan dipublikasikan ke GitHub Pages (branch `gh-pages`) oleh GitHub Actions.
+Dibangun dengan Preact, Dexie (IndexedDB), ZXing, dan Capacitor (APK Android, folder `android/`). Plugin printer native ada di `android/app/src/main/java/id/warung/kasir/PosPrinterPlugin.java`. Setiap push ke `main` otomatis di-build dan dipublikasikan ke GitHub Pages (branch `gh-pages`) oleh GitHub Actions.
