@@ -1,3 +1,5 @@
+import { isNative, PosPrinter, textToBase64 } from './native.js';
+
 const nf = new Intl.NumberFormat('id-ID');
 
 export const rp = (n) => `Rp${nf.format(Math.round(n || 0))}`;
@@ -105,7 +107,16 @@ export function beep() {
   if (navigator.vibrate) navigator.vibrate(60);
 }
 
-export function download(filename, content, type = 'application/json') {
+export async function download(filename, content, type = 'application/json') {
+  if (isNative) {
+    // WebView APK tidak bisa mengunduh langsung, jadi pakai menu Bagikan Android
+    try {
+      await PosPrinter.shareFile({ filename, mime: type, data: textToBase64(content) });
+    } catch (e) {
+      toast(e.message || 'Gagal menyimpan file', 'err', 4000);
+    }
+    return;
+  }
   const blob = content instanceof Blob ? content : new Blob([content], { type });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -133,3 +144,10 @@ export const debounce = (fn, ms = 200) => {
     t = setTimeout(() => fn(...a), ms);
   };
 };
+
+export async function shareText(title, text) {
+  if (isNative) return PosPrinter.shareText({ title, text }).catch(() => {});
+  if (navigator.share) return navigator.share({ title, text }).catch(() => {});
+  await navigator.clipboard?.writeText(text);
+  toast('Nota disalin');
+}

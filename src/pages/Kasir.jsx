@@ -3,8 +3,8 @@ import { Header, Icon, Sheet, MoneyInput, Empty, Field, Segmented, useLive } fro
 import { Scanner } from '../components/Scanner.jsx';
 import { ProductForm } from '../components/ProductForm.jsx';
 import { db, checkout } from '../lib/db.js';
-import { rp, num, toast, beep, confirmDialog, fmtTime } from '../lib/utils.js';
-import { printReceipt, receiptText } from '../lib/printer.js';
+import { rp, num, toast, beep, confirmDialog, fmtTime, shareText } from '../lib/utils.js';
+import { printReceipt, receiptText, effectiveMethod } from '../lib/printer.js';
 
 const CART_KEY = 'pos.cart';
 const HOLD_KEY = 'pos.held';
@@ -494,23 +494,13 @@ function DoneSheet({ sale, settings, onClose }) {
     setPrinting(true);
     try {
       await printReceipt(sale, settings, method);
-      if ((method || settings.printMethod) === 'bluetooth') toast('Nota dicetak');
+      if (['bluetooth', 'native'].includes(effectiveMethod(method || settings.printMethod))) toast('Nota dicetak');
     } catch (e) {
       if (e.name !== 'NotFoundError') toast(e.message || 'Gagal mencetak', 'err', 4500);
     }
     setPrinting(false);
   };
-  const share = async () => {
-    const text = receiptText(sale, settings);
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: `Nota ${sale.no}`, text });
-      } catch {}
-    } else {
-      await navigator.clipboard?.writeText(text);
-      toast('Nota disalin');
-    }
-  };
+  const share = () => shareText(`Nota ${sale.no}`, receiptText(sale, settings));
   return (
     <Sheet title="Transaksi Berhasil" onClose={onClose}>
       <div class="done">

@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import { App } from './app.jsx';
 import './styles.css';
+import { isNative } from './lib/native.js';
 
 render(<App />, document.getElementById('app'));
 
@@ -9,7 +10,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
   window.__installPrompt = e;
 });
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if ('serviceWorker' in navigator && import.meta.env.PROD && !isNative) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 

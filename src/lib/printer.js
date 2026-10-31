@@ -1,4 +1,5 @@
 import { rp, num, fmtDateTime } from './utils.js';
+import { isNative, PosPrinter, bytesToBase64 } from './native.js';
 
 /* ================= Susun isi nota (teks monospace) ================= */
 
@@ -196,10 +197,28 @@ async function sendBluetooth(bytes) {
 /* ================= RawBT (printer Bluetooth klasik / USB lewat aplikasi RawBT) ================= */
 
 function sendRawBT(bytes) {
-  let bin = '';
-  for (const b of bytes) bin += String.fromCharCode(b);
-  const b64 = btoa(bin);
-  window.location.href = `intent:base64,${b64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+  const url = `intent:base64,${bytesToBase64(bytes)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+  if (isNative) return PosPrinter.openIntent({ url });
+  window.location.href = url;
+}
+
+/* ================= APK: printer Bluetooth klasik yang sudah dipasangkan ================= */
+
+async function sendNative(bytes, settings) {
+  if (!settings.printerAddress) throw new Error('Printer belum dipilih. Buka Menu > Pengaturan & Printer > Pilih Printer.');
+  await PosPrinter.print({ address: settings.printerAddress, data: bytesToBase64(bytes) });
+}
+
+/** Di APK hanya ada "native" dan "rawbt"; di browser tidak ada "native". */
+export function effectiveMethod(m) {
+  if (isNative) return m === 'rawbt' ? 'rawbt' : 'native';
+  return m === 'native' ? 'bluetooth' : m || 'bluetooth';
+}
+
+function send(bytes, settings, method) {
+  if (method === 'rawbt') return sendRawBT(bytes);
+  if (method === 'native') return sendNative(bytes, settings);
+  return sendBluetooth(bytes);
 }
 
 /* ================= Cetak lewat dialog print browser / simpan PDF ================= */
@@ -224,11 +243,9 @@ export function printBrowser(text, widthMm = 58) {
 
 /** Cetak nota sesuai metode di pengaturan. */
 export async function printReceipt(sale, settings, method = settings.printMethod) {
-  const lines = receiptLines(sale, settings);
+  method = effectiveMethod(method);
   if (method === 'browser') return printBrowser(receiptText(sale, settings), Number(settings.paperWidth) >= 48 ? 80 : 58);
-  const bytes = escpos(lines);
-  if (method === 'rawbt') return sendRawBT(bytes);
-  return sendBluetooth(bytes);
+  return send(escpos(receiptLines(sale, settings)), settings, method);
 }
 
 export async function printTest(settings) {
@@ -240,8 +257,7 @@ export async function printTest(settings) {
     { text: lr('Lebar kertas', `${W} karakter`, W), align: 'left' },
     { text: '1234567890'.repeat(5).slice(0, W), align: 'left' },
   ];
-  if (settings.printMethod === 'browser') return printBrowser(lines.map((l) => l.text).join('\n'));
-  const bytes = escpos(lines);
-  if (settings.printMethod === 'rawbt') return sendRawBT(bytes);
-  return sendBluetooth(bytes);
+  const method = effectiveMethod(settings.printMethod);
+  if (method === 'browser') return printBrowser(lines.map((l) => l.text).join('\n'));
+  return send(escpos(lines), settings, method);
 }

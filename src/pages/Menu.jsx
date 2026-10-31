@@ -1,8 +1,9 @@
 import { useState } from 'preact/hooks';
-import { Header, Icon, Field, Segmented, useLive } from '../components/ui.jsx';
+import { Header, Icon, Field, Segmented, Sheet, Empty, useLive } from '../components/ui.jsx';
 import { db, saveSettings, exportAll, importAll, loadDemo, wipeAll, saveProduct } from '../lib/db.js';
 import { rp, toast, confirmDialog, download, toCSV, isoDate, parseNum } from '../lib/utils.js';
-import { pairBluetooth, printTest, bluetoothSupported, connectedPrinterName } from '../lib/printer.js';
+import { pairBluetooth, printTest, bluetoothSupported, connectedPrinterName, effectiveMethod } from '../lib/printer.js';
+import { isNative, PosPrinter } from '../lib/native.js';
 
 export function Menu({ go }) {
   const debt = useLive(async () => (await db.sales.where('status').equals('utang').toArray()).reduce((s, x) => s + x.total - (x.debtPaid || 0), 0), [], 0);
@@ -36,7 +37,7 @@ export function Menu({ go }) {
 }
 
 function InstallHint() {
-  const standalone = window.matchMedia?.('(display-mode: standalone)').matches;
+  const standalone = isNative || window.matchMedia?.('(display-mode: standalone)').matches;
   const [prompt, setPrompt] = useState(() => window.__installPrompt);
   if (standalone) return null;
   return (
@@ -68,6 +69,17 @@ function InstallHint() {
 export function Pengaturan({ settings, back }) {
   const [s, setS] = useState(settings);
   const [printer, setPrinter] = useState(connectedPrinterName());
+  const [paired, setPaired] = useState(null);
+  const method = effectiveMethod(s.printMethod);
+
+  const choosePrinter = async () => {
+    try {
+      const { devices } = await PosPrinter.listPaired();
+      setPaired(devices);
+    } catch (e) {
+      toast(e.message, 'err', 4500);
+    }
+  };
   const set = (k) => (v) => setS((x) => ({ ...x, [k]: v }));
   const dirty = JSON.stringify(s) !== JSON.stringify(settings);
 
@@ -218,13 +230,19 @@ export function Pengaturan({ settings, back }) {
             </Field>
             <Field label="Cara mencetak">
               <div class="col gap-s">
-                {[
-                  ['bluetooth', 'Bluetooth langsung', 'Untuk printer thermal Bluetooth (BLE). Paling praktis di Chrome Android.'],
-                  ['rawbt', 'Lewat aplikasi RawBT', 'Untuk semua printer Bluetooth/USB. Pasang "RawBT" dari Play Store, pasangkan printer di sana.'],
-                  ['browser', 'Cetak / simpan PDF', 'Pakai dialog cetak bawaan HP (printer WiFi atau simpan PDF).'],
-                ].map(([v, t, d]) => (
-                  <label class={`radio-card ${s.printMethod === v ? 'active' : ''}`}>
-                    <input type="radio" name="pm" checked={s.printMethod === v} onChange={() => set('printMethod')(v)} />
+                {(isNative
+                  ? [
+                      ['native', 'Printer Bluetooth', 'Untuk printer thermal Bluetooth. Pasangkan (pairing) printer dulu di Pengaturan Bluetooth HP, lalu pilih di sini.'],
+                      ['rawbt', 'Lewat aplikasi RawBT', 'Cadangan jika printer tidak mau tersambung. Pasang "RawBT" dari Play Store.'],
+                    ]
+                  : [
+                      ['bluetooth', 'Bluetooth langsung', 'Untuk printer thermal Bluetooth (BLE). Paling praktis di Chrome Android.'],
+                      ['rawbt', 'Lewat aplikasi RawBT', 'Untuk semua printer Bluetooth/USB. Pasang "RawBT" dari Play Store, pasangkan printer di sana.'],
+                      ['browser', 'Cetak / simpan PDF', 'Pakai dialog cetak bawaan HP (printer WiFi atau simpan PDF).'],
+                    ]
+                ).map(([v, t, d]) => (
+                  <label class={`radio-card ${method === v ? 'active' : ''}`}>
+                    <input type="radio" name="pm" checked={method === v} onChange={() => set('printMethod')(v)} />
                     <div>
                       <b>{t}</b>
                       <div class="muted small">{d}</div>
@@ -233,7 +251,10 @@ export function Pengaturan({ settings, back }) {
                 ))}
               </div>
             </Field>
-            {s.printMethod === 'bluetooth' && (
+            {method === 'native' && (
+              <div class="note">{s.printerName ? `Printer dipilih: ${s.printerName}` : 'Belum ada printer dipilih. Tekan "Pilih Printer".'}</div>
+            )}
+            {method === 'bluetooth' && (
               <div class="note">
                 {!bluetoothSupported()
                   ? 'Browser ini belum mendukung Bluetooth. Buka di Chrome Android, atau pilih RawBT.'
@@ -243,7 +264,12 @@ export function Pengaturan({ settings, back }) {
               </div>
             )}
             <div class="row gap">
-              {s.printMethod === 'bluetooth' && (
+              {method === 'native' && (
+                <button class="btn secondary grow" onClick={choosePrinter}>
+                  <Icon name="bluetooth" /> Pilih Printer
+                </button>
+              )}
+              {method === 'bluetooth' && (
                 <button class="btn secondary grow" onClick={pair}>
                   <Icon name="bluetooth" /> Cari Printer
                 </button>
@@ -330,6 +356,35 @@ export function Pengaturan({ settings, back }) {
           </div>
         </div>
       </div>
+      {paired && (
+        <Sheet title="Pilih Printer" onClose={() => setPaired(null)}>
+          {paired.length === 0 && (
+            <Empty icon="bluetooth" title="Belum ada perangkat dipasangkan" text="Buka Pengaturan HP > Bluetooth, nyalakan printer, lalu pasangkan (PIN biasanya 0000 atau 1234). Setelah itu kembali ke sini." />
+          )}
+          {paired.map((d) => (
+            <button
+              class={`list-item tap ${s.printerAddress === d.address ? 'sel' : ''}`}
+              key={d.address}
+              onClick={async () => {
+                const next = { ...s, printerAddress: d.address, printerName: d.name, printMethod: 'native' };
+                setS(next);
+                await saveSettings({ printerAddress: d.address, printerName: d.name, printMethod: 'native' });
+                setPaired(null);
+                toast(`Printer ${d.name} dipilih`);
+              }}
+            >
+              <span class="menu-icon">
+                <Icon name="printer" />
+              </span>
+              <div class="grow">
+                <div class="item-name">{d.name}</div>
+                <div class="item-sub">{d.address}</div>
+              </div>
+              {s.printerAddress === d.address && <Icon name="check" />}
+            </button>
+          ))}
+        </Sheet>
+      )}
     </div>
   );
 }

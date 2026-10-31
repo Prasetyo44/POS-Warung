@@ -1,0 +1,11 @@
+{
+  "appId": "id.warung.kasir",
+  "appName": "Kasir Warung",
+  "webDir": "dist",
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

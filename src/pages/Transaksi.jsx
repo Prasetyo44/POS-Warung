@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { Header, Icon, Empty, Sheet, Field, MoneyInput, useLive } from '../components/ui.jsx';
 import { PeriodPicker, usePeriod } from './Laporan.jsx';
 import { db, voidSale, payDebt } from '../lib/db.js';
-import { rp, num, fmtDateTime, fmtTime, fmtDay, startOfDay, toast, confirmDialog } from '../lib/utils.js';
+import { rp, num, fmtDateTime, fmtTime, fmtDay, startOfDay, toast, confirmDialog, shareText } from '../lib/utils.js';
 import { printReceipt, receiptText } from '../lib/printer.js';
 
 const M = { tunai: 'Tunai', qris: 'QRIS', transfer: 'Transfer', kasbon: 'Kasbon' };
@@ -78,14 +78,7 @@ export function SaleDetail({ sale: initial, settings, onClose }) {
       if (e.name !== 'NotFoundError') toast(e.message || 'Gagal mencetak', 'err', 4500);
     }
   };
-  const share = async () => {
-    const text = receiptText(sale, settings);
-    if (navigator.share) navigator.share({ title: `Nota ${sale.no}`, text }).catch(() => {});
-    else {
-      await navigator.clipboard?.writeText(text);
-      toast('Nota disalin');
-    }
-  };
+  const share = () => shareText(`Nota ${sale.no}`, receiptText(sale, settings));
   const cancel = async () => {
     const ok = await confirmDialog({
       title: 'Batalkan transaksi?',
