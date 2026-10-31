@@ -1,0 +1,20 @@
+{
+  "name": "pos-warung",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@zxing/library": "^0.21.3",
+    "dexie": "^4.4.7",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "vite": "^6.4.5"
+  }
+}
